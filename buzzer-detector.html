@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BuzzerGuard — Instagram Comment Analyzer</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-primary: #0a0a0f;
+  --bg-secondary: #12121a;
+  --bg-card: #1a1a26;
+  --bg-card-hover: #222233;
+  --accent: #ff3d5a;
+  --accent-glow: rgba(255, 61, 90, 0.3);
+  --accent-secondary: #ff6b35;
+  --safe: #00d4aa;
+  --safe-glow: rgba(0, 212, 170, 0.2);
+  --warning: #ffb800;
+  --warning-glow: rgba(255, 184, 0, 0.2);
+  --danger: #ff3d5a;
+  --danger-glow: rgba(255, 61, 90, 0.2);
+  --text-primary: #eeeef0;
+  --text-secondary: #8888a0;
+  --text-muted: #55556a;
+  --border: #2a2a3a;
+  --border-light: #333348;
+  --font-body: 'DM Sans', sans-serif;
+  --font-mono: 'Space Mono', monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Noise overlay */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* Ambient glow */
+.ambient-glow {
+  position: fixed;
+  width: 600px;
+  height: 600px;
+  border-radius: 50%;
+  filter: blur(150px);
+  opacity: 0.07;
+  pointer-events: none;
+  z-index: 0;
+}
+.glow-1 { top: -200px; left: -100px; background: var(--accent); }
+.glow-2 { bottom: -200px; right: -100px; background: #6366f1; }
+
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 24px;
+  position: relative;
+  z-index: 1;
+}
+
+/* HEADER */
+header {
+  padding: 40px 0 20px;
+  text-align: center;
+}
+
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.logo-icon {
+  width: 44px;
+  height: 44px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  box-shadow: 0 4px 20px var(--accent-glow);
+}
+
+.logo-text {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+.logo-text span { color: var(--accent); }
+
+header p {
+  color: var(--text-secondary);
+  font-size: 15px;
+  max-width: 500px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+
+/* INPUT SECTION */
+.input-section {
+  margin: 32px 0;
+  position: relative;
+}
+
+.input-wrapper {
+  display: flex;
+  gap: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 8px;
+  transition: all 0.3s ease;
+}
+
+.input-wrapper:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow), 0 8px 32px rgba(0,0,0,0.3);
+}
+
+.input-wrapper input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  padding: 12px 16px;
+  letter-spacing: -0.3px;
+}
+
+.input-wrapper input::placeholder {
+  color: var(--text-muted);
+}
+
+.btn-analyze {
+  background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+  border: none;
+  color: white;
+  padding: 12px 28px;
+  border-radius: 10px;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+  letter-spacing: 0.3px;
+}
+
+.btn-analyze:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 24px var(--accent-glow);
+}
+
+.btn-analyze:active { transform: translateY(0); }
+
+.btn-analyze:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* INFO BANNER */
+.info-banner {
+  margin-top: 16px;
+  padding: 14px 18px;
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.info-banner .icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+
+/* LOADING STATE */
+.loading-section {
+  display: none;
+  text-align: center;
+  padding: 60px 0;
+}
+
+.loading-section.active { display: block; }
+
+.spinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto 20px;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.loading-steps {
+  list-style: none;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+}
+
+.loading-steps li {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: color 0.3s;
+}
+
+.loading-steps li.active { color: var(--text-primary); }
+.loading-steps li.done { color: var(--safe); }
+.loading-steps li .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+.loading-steps li.active .dot { background: var(--accent); animation: pulse-dot 1s infinite; }
+.loading-steps li.done .dot { background: var(--safe); }
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* RESULTS */
+.results-section {
+  display: none;
+  padding-bottom: 60px;
+}
+
+.results-section.active { display: block; }
+
+/* Summary Cards */
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 32px;
+}
+
+@media (max-width: 768px) {
+  .summary-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+.summary-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px;
+  text-align: center;
+  transition: all 0.3s ease;
+  animation: fadeUp 0.5s ease both;
+}
+
+.summary-card:hover {
+  border-color: var(--border-light);
+  transform: translateY(-2px);
+}
+
+.summary-card .value {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -1px;
+  margin-bottom: 4px;
+}
+
+.summary-card .label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 500;
+}
+
+.summary-card.danger .value { color: var(--danger); }
+.summary-card.warning .value { color: var(--warning); }
+.summary-card.safe .value { color: var(--safe); }
+
+/* Threat Meter */
+.threat-meter {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 28px;
+  margin-bottom: 28px;
+  animation: fadeUp 0.6s ease both;
+}
+
+.threat-meter h3 {
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--text-secondary);
+  margin-bottom: 20px;
+  font-weight: 600;
+}
+
+.meter-bar-container {
+  position: relative;
+  height: 12px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.meter-bar {
+  height: 100%;
+  border-radius: 6px;
+  transition: width 1.5s cubic-bezier(0.22, 1, 0.36, 1);
+  width: 0%;
+}
+
+.meter-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.threat-description {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* Tabs */
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 20px;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  padding: 4px;
+  width: fit-content;
+}
+
+.tab-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tab-btn:hover { color: var(--text-primary); }
+
+.tab-btn.active {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+/* Comment List */
+.comment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.comment-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px 20px;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  transition: all 0.3s ease;
+  animation: fadeUp 0.4s ease both;
+  cursor: default;
+}
+
+.comment-item:hover {
+  border-color: var(--border-light);
+  background: var(--bg-card-hover);
+}
+
+.comment-item.buzzer { border-left: 3px solid var(--danger); }
+.comment-item.suspect { border-left: 3px solid var(--warning); }
+.comment-item.legit { border-left: 3px solid var(--safe); }
+
+.avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 15px;
+  color: white;
+}
+
+.comment-item.buzzer .avatar { background: linear-gradient(135deg, #ff3d5a, #ff6b35); }
+.comment-item.suspect .avatar { background: linear-gradient(135deg, #ffb800, #ff8c00); }
+.comment-item.legit .avatar { background: linear-gradient(135deg, #00d4aa, #00b4d8); }
+
+.comment-body { flex: 1; min-width: 0; }
+
+.comment-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.comment-username {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.comment-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.badge-buzzer {
+  background: var(--danger-glow);
+  color: var(--danger);
+}
+
+.badge-suspect {
+  background: var(--warning-glow);
+  color: var(--warning);
+}
+
+.badge-legit {
+  background: var(--safe-glow);
+  color: var(--safe);
+}
+
+.comment-text {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 10px;
+}
+
+.comment-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.flag-tag {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.flag-tag.red { color: var(--danger); border-color: rgba(255,61,90,0.2); background: rgba(255,61,90,0.05); }
+.flag-tag.yellow { color: var(--warning); border-color: rgba(255,184,0,0.2); background: rgba(255,184,0,0.05); }
+
+.confidence-bar {
+  width: 60px;
+  height: 4px;
+  background: var(--bg-secondary);
+  border-radius: 2px;
+  overflow: hidden;
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 6px;
+}
+
+.confidence-fill {
+  height: 100%;
+  border-radius: 2px;
+}
+
+/* Pattern Analysis */
+.patterns-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+}
+
+@media (max-width: 768px) {
+  .patterns-grid { grid-template-columns: 1fr; }
+}
+
+.pattern-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 22px;
+  animation: fadeUp 0.5s ease both;
+}
+
+.pattern-card h4 {
+  font-size: 14px;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pattern-card p {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+.pattern-bar {
+  height: 6px;
+  background: var(--bg-secondary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.pattern-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 1s ease;
+}
+
+.pattern-stat {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+
+/* Reset button */
+.btn-reset {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-top: 24px;
+}
+
+.btn-reset:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* How it works */
+.how-it-works {
+  margin-top: 48px;
+  margin-bottom: 40px;
+  text-align: center;
+}
+
+.how-it-works h2 {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 28px;
+  letter-spacing: -0.3px;
+}
+
+.steps-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 600px) {
+  .steps-row { grid-template-columns: 1fr; }
+}
+
+.step-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 28px 22px;
+  transition: all 0.3s;
+}
+
+.step-card:hover { border-color: var(--border-light); transform: translateY(-2px); }
+
+.step-num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+
+.step-icon { font-size: 28px; margin-bottom: 12px; }
+
+.step-card h3 { font-size: 15px; margin-bottom: 8px; font-weight: 600; }
+
+.step-card p { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+
+footer {
+  text-align: center;
+  padding: 32px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+}
+</style>
+</head>
+<body>
+
+<div class="ambient-glow glow-1"></div>
+<div class="ambient-glow glow-2"></div>
+
+<div class="container">
+  <header>
+    <div class="logo">
+      <div class="logo-icon">🛡️</div>
+      <div class="logo-text">Buzzer<span>Guard</span></div>
+    </div>
+    <p>Analisis komentar Instagram untuk mendeteksi akun buzzer, bot, dan akun ternak yang mencoba memanipulasi opini publik.</p>
+  </header>
+
+  <!-- INPUT -->
+  <section class="input-section">
+    <div class="input-wrapper">
+      <input type="text" id="urlInput" placeholder="https://www.instagram.com/p/ABC123..." spellcheck="false">
+      <button class="btn-analyze" id="analyzeBtn" onclick="startAnalysis()">Analisis Post</button>
+    </div>
+    <div class="info-banner">
+      <span class="icon">ℹ️</span>
+      <span>
+        <strong>Demo Mode:</strong> Karena Instagram API memerlukan autentikasi, sistem ini menampilkan simulasi analisis yang realistis berdasarkan pola-pola umum buzzer di Indonesia. Untuk versi produksi, integrasikan dengan Instagram Graph API atau scraping service.
+      </span>
+    </div>
+  </section>
+
+  <!-- LOADING -->
+  <section class="loading-section" id="loadingSection">
+    <div class="spinner"></div>
+    <ul class="loading-steps">
+      <li id="step1"><span class="dot"></span> Mengambil data post...</li>
+      <li id="step2"><span class="dot"></span> Mengekstrak komentar...</li>
+      <li id="step3"><span class="dot"></span> Menganalisis pola akun...</li>
+      <li id="step4"><span class="dot"></span> Mendeteksi cluster buzzer...</li>
+      <li id="step5"><span class="dot"></span> Menghitung skor ancaman...</li>
+    </ul>
+  </section>
+
+  <!-- RESULTS -->
+  <section class="results-section" id="resultsSection">
+    <div class="summary-grid" id="summaryGrid"></div>
+    <div class="threat-meter" id="threatMeter"></div>
+
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('comments', this)">Komentar</button>
+      <button class="tab-btn" onclick="switchTab('patterns', this)">Pola Deteksi</button>
+    </div>
+
+    <div id="commentsTab" class="comment-list"></div>
+    <div id="patternsTab" class="patterns-grid" style="display:none;"></div>
+
+    <div style="text-align:center;">
+      <button class="btn-reset" onclick="resetAll()">← Analisis Post Lain</button>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS (shown initially) -->
+  <section class="how-it-works" id="howSection">
+    <h2>Bagaimana Cara Kerjanya?</h2>
+    <div class="steps-row">
+      <div class="step-card" style="animation-delay:0.1s">
+        <div class="step-num">Step 01</div>
+        <div class="step-icon">🔗</div>
+        <h3>Masukkan URL Post</h3>
+        <p>Paste link Instagram post yang ingin kamu analisis. Bisa berupa post, reels, atau carousel.</p>
+      </div>
+      <div class="step-card" style="animation-delay:0.2s">
+        <div class="step-num">Step 02</div>
+        <div class="step-icon">🔍</div>
+        <h3>Analisis Otomatis</h3>
+        <p>Sistem kami menganalisis pola komentar, usia akun, kesamaan teks, dan aktivitas mencurigakan.</p>
+      </div>
+      <div class="step-card" style="animation-delay:0.3s">
+        <div class="step-num">Step 03</div>
+        <div class="step-icon">📊</div>
+        <h3>Lihat Hasilnya</h3>
+        <p>Dapatkan laporan detail dengan skor ancaman, daftar akun mencurigakan, dan pola serangan buzzer.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    BuzzerGuard © 2026 — Alat analisis untuk transparansi media sosial
+  </footer>
+</div>
+
+<script>
+// ============================================
+// SIMULATED DATA GENERATOR
+// ============================================
+
+const indonesianNames = [
+  'andi_pratama', 'siti_nurhaliza99', 'budi.santoso', 'dewi_lestari', 'rizky_firmansyah',
+  'putri.cantik_', 'agus.wibowo12', 'maya_sari88', 'dian_purnama', 'faisal_hidayat',
+  'nurul_aini', 'hendri.gunawan', 'linda_kusuma', 'arif_budiman', 'rahayu_ningsih',
+  'bambang.surya', 'fitri_handayani', 'wahyu_utomo', 'eka.pratiwi', 'joko_widodo_fans',
+  'mega_wati_pdip', 'prabowo.subianto_id', 'nusantara_kita', 'indonesia_maju_bersama'
+];
+
+const buzzerComments = [
+  'Setuju banget! Ini yang kita butuhkan! 🔥🔥🔥',
+  'Mantap! Terus maju! 💪💪',
+  'Yang tidak setuju pasti bukan orang Indonesia asli',
+  'Luar biasa!! Pemimpin terbaik sepanjang masa!! 🇮🇩',
+  'Share ke semua grup WA!! Rakyat harus tau!!',
+  'Ini bukti nyata kerja nyata!! 👏👏👏',
+  'Yang kontra pasti dibayar asing 😤',
+  'Gak heran kalau banyak yang iri!! 🤣',
+  'Buktikan kalau kalian cinta Indonesia!! Share!! 🇮🇩🇮🇩',
+  'SETUJU 1000%!!! 🔥🔥🔥🔥🔥',
+  'Haters gonna hate!! Yang penting kita dukung terus!! 💯',
+  'Sudah terbukti yang terbaik! Fakta tidak bisa dibantah!',
+  'Bangga jadi pendukung sejati!! 🫡🇮🇩',
+  'Ini baru namanya PEMIMPIN! Bukan yang lain! 💪🇮🇩',
+  'Share dan tag teman kalian!! Jangan diam saja!!',
+  'Rakyat sudah membuktikan pilihannya!! MANTAP!! 🔥',
+];
+
+const suspectComments = [
+  'Hmm, menarik juga sih kalau dipikir-pikir 🤔',
+  'Semoga memang bener ya, kita lihat nanti hasilnya',
+  'Wow keren banget! 😍',
+  'Up up up biar banyak yang lihat!',
+  'Aamiin semoga sukses terus 🤲',
+  'Wah bagus ini, lanjutkan! 👍',
+];
+
+const legitComments = [
+  'Menurut saya ini perlu dikaji lebih dalam lagi. Ada beberapa data yang sepertinya kurang akurat.',
+  'Interesting perspective, tapi gimana dengan aspek X yang belum dibahas?',
+  'Gue pribadi sih ada di pihak yang sama, tapi harus tetap kritis dong',
+  'Ada sumbernya gak bro? Mau baca lebih lanjut nih',
+  'Sebagai orang yang kerja di bidang ini, ada beberapa hal yang perlu diluruskan...',
+  'Thanks for sharing. Kita memang perlu diskusi terbuka soal ini.',
+  'Setuju untuk beberapa poin, tapi poin ke-3 kayaknya perlu diperbaiki deh',
+  'Ini topik yang kompleks, gak bisa cuma dilihat dari satu sisi aja',
+  'Gue udah riset soal ini, dan datanya lebih nuanced dari yang ditampilkan',
+  'Good discussion! Penting banget awareness soal ini 👏',
+  'Lucu juga ya ngeliat orang debat di kolom komen 😂',
+  'Apa cuma gue yang baru tau soal ini? 😅',
+];
+
+const buzzerFlags = [
+  'akun-baru', 'pola-copy-paste', 'posting-massal', 'emoji-berlebihan',
+  'no-followers', 'nama-generik', 'tanpa-foto-profil', 'waktu-posting-serupa',
+  'komentar-identik', 'engagement-rendah'
+];
+
+const suspectFlags = [
+  'akun-muda', 'posting-jarang', 'pola-semi-otomatis', 'engagement-rendah'
+];
+
+function generateComments(count) {
+  const comments = [];
+  const buzzerCount = Math.floor(count * (0.3 + Math.random() * 0.25));
+  const suspectCount = Math.floor(count * (0.1 + Math.random() * 0.1));
+  const legitCount = count - buzzerCount - suspectCount;
+
+  // Generate buzzer comments
+  for (let i = 0; i < buzzerCount; i++) {
+    const flags = [];
+    const numFlags = 2 + Math.floor(Math.random() * 3);
+    const shuffled = [...buzzerFlags].sort(() => Math.random() - 0.5);
+    for (let f = 0; f < numFlags; f++) flags.push(shuffled[f]);
+
+    comments.push({
+      username: indonesianNames[Math.floor(Math.random() * 10)] + Math.floor(Math.random() * 999),
+      text: buzzerComments[Math.floor(Math.random() * buzzerComments.length)],
+      type: 'buzzer',
+      confidence: 0.75 + Math.random() * 0.24,
+      flags: flags,
+      accountAge: Math.floor(Math.random() * 30) + 1,
+      followers: Math.floor(Math.random() * 50),
+      posts: Math.floor(Math.random() * 5),
+    });
+  }
+
+  // Generate suspect comments
+  for (let i = 0; i < suspectCount; i++) {
+    const flags = [];
+    const numFlags = 1 + Math.floor(Math.random() * 2);
+    const shuffled = [...suspectFlags].sort(() => Math.random() - 0.5);
+    for (let f = 0; f < numFlags; f++) flags.push(shuffled[f]);
+
+    comments.push({
+      username: indonesianNames[Math.floor(Math.random() * indonesianNames.length)] + (Math.random() > 0.5 ? Math.floor(Math.random() * 99) : ''),
+      text: suspectComments[Math.floor(Math.random() * suspectComments.length)],
+      type: 'suspect',
+      confidence: 0.4 + Math.random() * 0.34,
+      flags: flags,
+      accountAge: Math.floor(Math.random() * 180) + 30,
+      followers: Math.floor(Math.random() * 500) + 50,
+      posts: Math.floor(Math.random() * 30) + 3,
+    });
+  }
+
+  // Generate legit comments
+  for (let i = 0; i < legitCount; i++) {
+    comments.push({
+      username: indonesianNames[Math.floor(Math.random() * indonesianNames.length)],
+      text: legitComments[Math.floor(Math.random() * legitComments.length)],
+      type: 'legit',
+      confidence: 0.05 + Math.random() * 0.2,
+      flags: [],
+      accountAge: Math.floor(Math.random() * 1500) + 180,
+      followers: Math.floor(Math.random() * 5000) + 100,
+      posts: Math.floor(Math.random() * 500) + 20,
+    });
+  }
+
+  return comments.sort(() => Math.random() - 0.5);
+}
+
+// ============================================
+// UI LOGIC
+// ============================================
+
+let currentComments = [];
+let currentFilter = 'all';
+
+function startAnalysis() {
+  const url = document.getElementById('urlInput').value.trim();
+  if (!url) {
+    document.getElementById('urlInput').focus();
+    return;
+  }
+
+  document.getElementById('analyzeBtn').disabled = true;
+  document.getElementById('howSection').style.display = 'none';
+  document.getElementById('resultsSection').classList.remove('active');
+  document.getElementById('loadingSection').classList.add('active');
+
+  const steps = ['step1','step2','step3','step4','step5'];
+  steps.forEach(s => {
+    document.getElementById(s).className = '';
+  });
+
+  let current = 0;
+  function advanceStep() {
+    if (current > 0) document.getElementById(steps[current-1]).className = 'done';
+    if (current < steps.length) {
+      document.getElementById(steps[current]).className = 'active';
+      current++;
+      setTimeout(advanceStep, 600 + Math.random() * 800);
+    } else {
+      setTimeout(showResults, 400);
+    }
+  }
+  advanceStep();
+}
+
+function showResults() {
+  document.getElementById('loadingSection').classList.remove('active');
+  document.getElementById('resultsSection').classList.add('active');
+
+  const totalComments = 40 + Math.floor(Math.random() * 60);
+  currentComments = generateComments(totalComments);
+
+  const buzzers = currentComments.filter(c => c.type === 'buzzer');
+  const suspects = currentComments.filter(c => c.type === 'suspect');
+  const legits = currentComments.filter(c => c.type === 'legit');
+  const threatScore = Math.round((buzzers.length / currentComments.length) * 100);
+
+  // Summary
+  document.getElementById('summaryGrid').innerHTML = `
+    <div class="summary-card" style="animation-delay:0.1s">
+      <div class="value">${currentComments.length}</div>
+      <div class="label">Total Komentar</div>
+    </div>
+    <div class="summary-card danger" style="animation-delay:0.2s">
+      <div class="value">${buzzers.length}</div>
+      <div class="label">Buzzer Terdeteksi</div>
+    </div>
+    <div class="summary-card warning" style="animation-delay:0.3s">
+      <div class="value">${suspects.length}</div>
+      <div class="label">Mencurigakan</div>
+    </div>
+    <div class="summary-card safe" style="animation-delay:0.4s">
+      <div class="value">${legits.length}</div>
+      <div class="label">Akun Organik</div>
+    </div>
+  `;
+
+  // Threat meter
+  let meterColor, meterBg, threatLabel, threatDesc;
+  if (threatScore >= 50) {
+    meterColor = 'linear-gradient(90deg, #ff3d5a, #ff6b35)';
+    meterBg = 'rgba(255,61,90,0.08)';
+    threatLabel = '⚠️ TINGGI';
+    threatDesc = `Post ini menunjukkan indikasi kuat serangan buzzer terkoordinasi. <strong>${buzzers.length} dari ${currentComments.length}</strong> komentar memiliki pola yang konsisten dengan akun ternak/buzzer: akun baru, komentar copy-paste, emoji berlebihan, dan waktu posting yang sangat berdekatan.`;
+  } else if (threatScore >= 25) {
+    meterColor = 'linear-gradient(90deg, #ffb800, #ff8c00)';
+    meterBg = 'rgba(255,184,0,0.08)';
+    threatLabel = '⚡ SEDANG';
+    threatDesc = `Post ini menunjukkan beberapa indikasi aktivitas buzzer. <strong>${buzzers.length} komentar</strong> terdeteksi dengan pola mencurigakan. Kemungkinan ada upaya manipulasi opini, namun masih ada diskusi organik yang signifikan.`;
+  } else {
+    meterColor = 'linear-gradient(90deg, #00d4aa, #00b4d8)';
+    meterBg = 'rgba(0,212,170,0.08)';
+    threatLabel = '✓ RENDAH';
+    threatDesc = `Post ini tampak memiliki engagement yang mayoritas organik. Hanya <strong>${buzzers.length} komentar</strong> yang menunjukkan pola buzzer. Diskusi di kolom komentar terlihat natural dan beragam.`;
+  }
+
+  document.getElementById('threatMeter').innerHTML = `
+    <h3>Threat Level: ${threatLabel}</h3>
+    <div class="meter-bar-container">
+      <div class="meter-bar" id="meterBar" style="background:${meterColor};"></div>
+    </div>
+    <div class="meter-labels">
+      <span>Aman</span>
+      <span>Rendah</span>
+      <span>Sedang</span>
+      <span>Tinggi</span>
+      <span>Kritis</span>
+    </div>
+    <div class="threat-description" style="background:${meterBg};">${threatDesc}</div>
+  `;
+
+  // Animate meter bar
+  setTimeout(() => {
+    document.getElementById('meterBar').style.width = threatScore + '%';
+  }, 200);
+
+  // Comments
+  renderComments('all');
+
+  // Patterns
+  renderPatterns(buzzers, suspects, currentComments);
+
+  document.getElementById('analyzeBtn').disabled = false;
+}
+
+function renderComments(filter) {
+  currentFilter = filter;
+  let filtered = currentComments;
+  if (filter === 'buzzer') filtered = currentComments.filter(c => c.type === 'buzzer');
+  else if (filter === 'suspect') filtered = currentComments.filter(c => c.type === 'suspect');
+  else if (filter === 'legit') filtered = currentComments.filter(c => c.type === 'legit');
+
+  // Sort: buzzers first
+  filtered.sort((a, b) => {
+    const order = { buzzer: 0, suspect: 1, legit: 2 };
+    return order[a.type] - order[b.type];
+  });
+
+  const container = document.getElementById('commentsTab');
+  container.innerHTML = `
+    <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;">
+      <button class="tab-btn ${filter==='all'?'active':''}" onclick="renderComments('all')" style="font-size:12px;padding:6px 14px;">Semua (${currentComments.length})</button>
+      <button class="tab-btn ${filter==='buzzer'?'active':''}" onclick="renderComments('buzzer')" style="font-size:12px;padding:6px 14px;">🔴 Buzzer (${currentComments.filter(c=>c.type==='buzzer').length})</button>
+      <button class="tab-btn ${filter==='suspect'?'active':''}" onclick="renderComments('suspect')" style="font-size:12px;padding:6px 14px;">🟡 Mencurigakan (${currentComments.filter(c=>c.type==='suspect').length})</button>
+      <button class="tab-btn ${filter==='legit'?'active':''}" onclick="renderComments('legit')" style="font-size:12px;padding:6px 14px;">🟢 Organik (${currentComments.filter(c=>c.type==='legit').length})</button>
+    </div>
+  `;
+
+  filtered.forEach((c, i) => {
+    const initial = c.username.charAt(0).toUpperCase();
+    const badgeClass = c.type === 'buzzer' ? 'badge-buzzer' : c.type === 'suspect' ? 'badge-suspect' : 'badge-legit';
+    const badgeText = c.type === 'buzzer' ? 'BUZZER' : c.type === 'suspect' ? 'MENCURIGAKAN' : 'ORGANIK';
+    const confPercent = Math.round(c.confidence * 100);
+    const confColor = c.type === 'buzzer' ? 'var(--danger)' : c.type === 'suspect' ? 'var(--warning)' : 'var(--safe)';
+
+    let flagsHtml = '';
+    if (c.flags.length) {
+      flagsHtml = `<div class="comment-flags">
+        ${c.flags.map(f => `<span class="flag-tag ${c.type === 'buzzer' ? 'red' : 'yellow'}">${f}</span>`).join('')}
+        <span class="flag-tag">📅 ${c.accountAge}d</span>
+        <span class="flag-tag">👥 ${c.followers}</span>
+        <span class="flag-tag">📸 ${c.posts} posts</span>
+      </div>`;
+    } else {
+      flagsHtml = `<div class="comment-flags">
+        <span class="flag-tag">📅 ${c.accountAge}d</span>
+        <span class="flag-tag">👥 ${c.followers}</span>
+        <span class="flag-tag">📸 ${c.posts} posts</span>
+      </div>`;
+    }
+
+    container.innerHTML += `
+      <div class="comment-item ${c.type}" style="animation-delay:${i * 0.05}s">
+        <div class="avatar">${initial}</div>
+        <div class="comment-body">
+          <div class="comment-header">
+            <span class="comment-username">@${c.username}</span>
+            <span class="comment-badge ${badgeClass}">${badgeText}</span>
+            <span style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono);">
+              ${confPercent}%
+              <span class="confidence-bar"><span class="confidence-fill" style="width:${confPercent}%;background:${confColor};"></span></span>
+            </span>
+          </div>
+          <div class="comment-text">${c.text}</div>
+          ${flagsHtml}
+        </div>
+      </div>
+    `;
+  });
+}
+
+function renderPatterns(buzzers, suspects, all) {
+  const container = document.getElementById('patternsTab');
+  const copyPasteRate = Math.round(55 + Math.random() * 30);
+  const newAccountRate = Math.round(buzzers.filter(b => b.accountAge < 30).length / Math.max(buzzers.length, 1) * 100);
+  const emojiRate = Math.round(65 + Math.random() * 25);
+  const timingCluster = Math.round(40 + Math.random() * 40);
+
+  container.innerHTML = `
+    <div class="pattern-card" style="animation-delay:0.1s">
+      <h4>📋 Komentar Copy-Paste</h4>
+      <p>Persentase komentar buzzer yang menggunakan teks serupa atau identik, menunjukkan koordinasi massal.</p>
+      <div class="pattern-bar"><div class="pattern-fill" style="width:${copyPasteRate}%;background:var(--danger);"></div></div>
+      <div class="pattern-stat">${copyPasteRate}% komentar buzzer memiliki kesamaan teks >80%</div>
+    </div>
+    <div class="pattern-card" style="animation-delay:0.2s">
+      <h4>👶 Akun Baru</h4>
+      <p>Akun yang dibuat dalam 30 hari terakhir, menandakan akun ternak yang sengaja dibuat untuk kampanye.</p>
+      <div class="pattern-bar"><div class="pattern-fill" style="width:${newAccountRate}%;background:var(--warning);"></div></div>
+      <div class="pattern-stat">${newAccountRate}% akun buzzer berusia <30 hari</div>
+    </div>
+    <div class="pattern-card" style="animation-delay:0.3s">
+      <h4>😀 Emoji Flooding</h4>
+      <p>Penggunaan emoji berlebihan (>3 per komentar) sebagai cara menarik perhatian dan menutupi kurangnya substansi.</p>
+      <div class="pattern-bar"><div class="pattern-fill" style="width:${emojiRate}%;background:var(--accent-secondary);"></div></div>
+      <div class="pattern-stat">${emojiRate}% komentar buzzer memiliki >3 emoji</div>
+    </div>
+    <div class="pattern-card" style="animation-delay:0.4s">
+      <h4>⏱️ Timing Cluster</h4>
+      <p>Komentar yang diposting dalam waktu berdekatan (<5 menit), menunjukkan aktivitas terkoordinasi.</p>
+      <div class="pattern-bar"><div class="pattern-fill" style="width:${timingCluster}%;background:#6366f1;"></div></div>
+      <div class="pattern-stat">${timingCluster}% komentar buzzer diposting dalam window 5 menit</div>
+    </div>
+  `;
+}
+
+function switchTab(tab, btn) {
+  document.querySelectorAll('.tabs .tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+
+  if (tab === 'comments') {
+    document.getElementById('commentsTab').style.display = 'flex';
+    document.getElementById('patternsTab').style.display = 'none';
+  } else {
+    document.getElementById('commentsTab').style.display = 'none';
+    document.getElementById('patternsTab').style.display = 'grid';
+  }
+}
+
+function resetAll() {
+  document.getElementById('resultsSection').classList.remove('active');
+  document.getElementById('howSection').style.display = 'block';
+  document.getElementById('urlInput').value = '';
+  document.getElementById('urlInput').focus();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// Enter key support
+document.getElementById('urlInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') startAnalysis();
+});
+</script>
+</body>
+</html>

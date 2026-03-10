@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # PYTHON ANALYSIS SERVICE (Port 8000)
+  # ═══════════════════════════════════════════════════════════════════════════
+  analysis-service:
+    build:
+      context: ./analysis-service
+      dockerfile: Dockerfile
+    container_name: buzzer-analyzer
+    restart: unless-stopped
+    ports:
+      # Bisa di-comment kalau tidak perlu akses publik ke Python
+      - "8000:8000"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    networks:
+      - buzzer-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # NEXT.JS WEB APP (Port 3000)
+  # ═══════════════════════════════════════════════════════════════════════════
+  web-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: buzzer-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # URL ke Python service (gunakan nama service sebagai hostname)
+      - PYTHON_SERVICE_URL=http://analysis-service:8000
+      # n8n Webhook URLs
+      - N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL:-}
+      - N8N_AI_WEBHOOK_URL=${N8N_AI_WEBHOOK_URL:-}
+    networks:
+      - buzzer-network
+    depends_on:
+      analysis-service:
+        condition: service_healthy
+
+networks:
+  buzzer-network:
+    driver: bridge
