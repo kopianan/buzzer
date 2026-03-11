@@ -150,7 +150,7 @@ async def scrape_tiktok_comments(
 
             if isinstance(data, dict) and data.get("status_code") and data.get("status_code") != 0:
                 raise ValueError(
-                    f"TikTok API error: {data.get('status_msg', f'status_code: {data.get('status_code')}')}"
+                    "TikTok API error: " + str(data.get('status_msg') or f"status_code: {data.get('status_code')}")
                 )
 
             # Debug logging
