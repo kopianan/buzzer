@@ -2,12 +2,10 @@ version: '3.8'
 
 services:
   # ═══════════════════════════════════════════════════════════════════════════
-  # PYTHON ANALYSIS SERVICE (internal only, tidak expose ke publik)
+  # PYTHON ANALYSIS SERVICE (internal only)
   # ═══════════════════════════════════════════════════════════════════════════
   analysis-service:
-    build:
-      context: ./analysis-service
-      dockerfile: Dockerfile
+    image: ghcr.io/kopianan/buzzer-analyzer:latest
     container_name: buzzer-analyzer
     restart: unless-stopped
     environment:
@@ -32,16 +30,7 @@ services:
   # NEXT.JS WEB APP — diakses via Traefik (buzzer.technokh.com)
   # ═══════════════════════════════════════════════════════════════════════════
   web-app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        - NEXT_PUBLIC_FIREBASE_API_KEY=${NEXT_PUBLIC_FIREBASE_API_KEY}
-        - NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN}
-        - NEXT_PUBLIC_FIREBASE_PROJECT_ID=${NEXT_PUBLIC_FIREBASE_PROJECT_ID}
-        - NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=${NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}
-        - NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID}
-        - NEXT_PUBLIC_FIREBASE_APP_ID=${NEXT_PUBLIC_FIREBASE_APP_ID}
+    image: ghcr.io/kopianan/buzzer-web:latest
     container_name: buzzer-web
     restart: unless-stopped
     environment:
