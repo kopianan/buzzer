@@ -5,12 +5,9 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
-  // Skip type checking and linting during Docker build (CI handles this separately)
+  // Skip type checking during Docker build (CI handles this separately)
   typescript: {
     ignoreBuildErrors: true,
-  },
-  eslint: {
-    ignoreDuringBuilds: true,
   },
 };
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAnalysis } from "@/hooks/useAnalysis";
 import { useAuth } from "@/lib/firebase/auth-context";
@@ -12,7 +12,15 @@ import { JobProgress } from "@/components/analysis/JobProgress";
 import { ResultsView } from "@/components/analysis/ResultsView";
 import { LoginModal } from "@/components/auth/LoginModal";
 
-export default function BuzzerGuard() {
+export default function Page() {
+  return (
+    <Suspense>
+      <BuzzerGuard />
+    </Suspense>
+  );
+}
+
+function BuzzerGuard() {
   const router = useRouter();
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showCreditModal, setShowCreditModal] = useState(false);
