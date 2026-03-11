@@ -246,8 +246,8 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
         idToken
       );
 
-      if (typeof (data as Record<string, unknown>).remainingCredits === "number") {
-        setCredits((data as Record<string, unknown>).remainingCredits as number);
+      if (typeof (data as unknown as Record<string, unknown>).remainingCredits === "number") {
+        setCredits((data as unknown as Record<string, unknown>).remainingCredits as number);
       }
 
       setResult(prev => prev ? { ...prev, ...data } : data);
