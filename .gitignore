@@ -32,6 +32,38 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+!.env.deploy.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Data files (large)
+data/test/*.json
+archive/
+
+# Firebase
+firebase-debug.log
+
+# Analysis service runtime files
+analysis-service/accounts.db
+analysis-service/scrape_output_*.json
+
+# MCP config (contains local paths)
+.mcp.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
 
 # vercel
 .vercel

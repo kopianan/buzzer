@@ -14,7 +14,14 @@ services:
       # Bisa di-comment kalau tidak perlu akses publik ke Python
       - "8000:8000"
     environment:
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
+      - FIREBASE_CLIENT_EMAIL=${FIREBASE_CLIENT_EMAIL}
+      - FIREBASE_PRIVATE_KEY=${FIREBASE_PRIVATE_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - IG_SESSION_ID=${IG_SESSION_ID:-}
+      - TT_SESSION_ID=${TT_SESSION_ID:-}
+      - X_AUTH_TOKEN=${X_AUTH_TOKEN:-}
     networks:
       - buzzer-network
     healthcheck:
@@ -31,6 +38,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_FIREBASE_API_KEY=${NEXT_PUBLIC_FIREBASE_API_KEY}
+        - NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN}
+        - NEXT_PUBLIC_FIREBASE_PROJECT_ID=${NEXT_PUBLIC_FIREBASE_PROJECT_ID}
+        - NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=${NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}
+        - NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID}
+        - NEXT_PUBLIC_FIREBASE_APP_ID=${NEXT_PUBLIC_FIREBASE_APP_ID}
     container_name: buzzer-web
     restart: unless-stopped
     ports:
@@ -38,6 +52,12 @@ services:
     environment:
       # URL ke Python service (gunakan nama service sebagai hostname)
       - PYTHON_SERVICE_URL=http://analysis-service:8000
+      # Internal shared secret
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      # Firebase Admin SDK (server-side)
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
+      - FIREBASE_CLIENT_EMAIL=${FIREBASE_CLIENT_EMAIL}
+      - FIREBASE_PRIVATE_KEY=${FIREBASE_PRIVATE_KEY}
       # n8n Webhook URLs
       - N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL:-}
       - N8N_AI_WEBHOOK_URL=${N8N_AI_WEBHOOK_URL:-}

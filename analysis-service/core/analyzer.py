@@ -15,7 +15,7 @@ from sklearn.cluster import DBSCAN
 from Sastrawi.StopWordRemover.StopWordRemoverFactory import StopWordRemoverFactory
 from Sastrawi.Stemmer.StemmerFactory import StemmerFactory
 
-from keywords import (
+from config.keywords import (
     PROMOTIONAL_CONTEXT_WORDS,
     GENERIC_WORD_FILTERS,
     ENTITY_PREFIXES,

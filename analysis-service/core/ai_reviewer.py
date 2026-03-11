@@ -8,7 +8,7 @@ import json
 import logging
 from typing import Any
 
-from config import config
+from config.settings import config
 
 logger = logging.getLogger(__name__)
 

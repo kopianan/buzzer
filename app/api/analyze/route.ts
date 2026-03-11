@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readFileSync } from "fs";
 import path from "path";
+import { getAdminDb, getAdminAuth } from "@/lib/firebase/admin";
+import { FieldValue } from "firebase-admin/firestore";
 
 const PYTHON_SERVICE_URL = process.env.PYTHON_SERVICE_URL || "http://localhost:8000";
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL;
 const N8N_AI_WEBHOOK_URL = process.env.N8N_AI_WEBHOOK_URL;
+const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || "";
 
 export interface AIReviewRequest {
   comments: Array<{
@@ -141,91 +144,120 @@ export function mergeAIResults(
   };
 }
 
+function detectPlatform(url: string): "instagram" | "twitter" | "tiktok" | "unknown" {
+  const u = url.toLowerCase();
+  if (u.includes("instagram.com")) return "instagram";
+  // X.com sementara dinonaktifkan
+  // if (u.includes("twitter.com") || u.includes("x.com")) return "twitter";
+  if (u.includes("tiktok.com")) return "tiktok";
+  return "unknown";
+}
+
+async function verifyToken(req: NextRequest): Promise<string> {
+  const authHeader = req.headers.get("authorization") || "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  if (!token) throw new Error("Unauthorized: missing token");
+  const decoded = await getAdminAuth().verifyIdToken(token);
+  return decoded.uid;
+}
+
+async function fireAndForgetPythonJob(analysisId: string, userId: string, postUrl: string, platform: string) {
+  try {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (INTERNAL_API_KEY) {
+      headers["X-Internal-Key"] = INTERNAL_API_KEY;
+    }
+    await fetch(`${PYTHON_SERVICE_URL}/job/run`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ analysis_id: analysisId, user_id: userId, post_url: postUrl, platform }),
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch (err) {
+    // If Python service is unreachable, mark job as failed
+    console.error("[/api/analyze] Failed to reach Python service:", err);
+    const db = getAdminDb();
+    await db.collection("analyses").doc(analysisId).update({
+      status: "failed",
+      error: `Python service tidak dapat dihubungi di ${PYTHON_SERVICE_URL}. Pastikan service sudah jalan.`,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { url, comments: uploadedComments } = body as {
+    const { url } = body as {
       url?: string;
-      comments?: unknown[];
+      // comments: uploadedComments — dinonaktifkan sementara
     };
 
-    // ── Mode 1: Direct JSON upload ─────────────────────────────────────
-    if (uploadedComments && Array.isArray(uploadedComments) && uploadedComments.length > 0) {
-      const result = await callPythonService(uploadedComments, "uploaded") as Record<string, unknown>;
-      
-      // AI Review sekarang manual - tidak otomatis
-      // Flag needs_ai_review untuk UI tahu ada komentar yang perlu AI review
-      const needsAiCount = (result.comments as Array<Record<string, unknown>>)
-        ?.filter(c => c.needs_ai === true).length || 0;
-      
-      return NextResponse.json({ 
-        ...result, 
-        mode: "upload",
-        needs_ai_review: needsAiCount > 0,
-        needs_ai_count: needsAiCount,
+    // ── Mode 1: Direct JSON upload — dinonaktifkan sementara ──
+    // if (uploadedComments && Array.isArray(uploadedComments) && uploadedComments.length > 0) {
+    //   const result = await callPythonService(uploadedComments, "uploaded") as Record<string, unknown>;
+    //   const needsAiCount = (result.comments as Array<Record<string, unknown>>)
+    //     ?.filter(c => c.needs_ai === true).length || 0;
+    //   return NextResponse.json({
+    //     ...result,
+    //     mode: "upload",
+    //     needs_ai_review: needsAiCount > 0,
+    //     needs_ai_count: needsAiCount,
+    //   });
+    // }
+
+    // ── Mode 2: URL-based (async — scraping + analysis in background) ──
+    if (url && url.trim() !== "") {
+      // Verify auth
+      const uid = await verifyToken(req);
+      const db = getAdminDb();
+      const platform = detectPlatform(url);
+
+      // Create analysis job in Firestore
+      const docRef = db.collection("analyses").doc();
+      await docRef.set({
+        userId: uid,
+        postUrl: url.trim(),
+        platform,
+        status: "pending",
+        statusMessage: "Mengirim ke sistem analisis...",
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       });
-    }
 
-    // ── Mode 2: Demo (URL kosong, tidak ada n8n) ───────────────────────
-    if (!N8N_WEBHOOK_URL || !url || url.trim() === "") {
-      const samplePath = path.join(process.cwd(), "file (1).json");
-      const raw = JSON.parse(readFileSync(samplePath, "utf-8"));
-      const comments = raw[0].comments;
-      
-      const result = await callPythonService(comments, "sample") as Record<string, unknown>;
-      
-      // AI Review sekarang manual - tidak otomatis
-      const needsAiCount = (result.comments as Array<Record<string, unknown>>)
-        ?.filter(c => c.needs_ai === true).length || 0;
-      
-      return NextResponse.json({ 
-        ...result, 
-        mode: "demo",
-        needs_ai_review: needsAiCount > 0,
-        needs_ai_count: needsAiCount,
-      });
-    }
+      // Fire-and-forget to Python service
+      fireAndForgetPythonJob(docRef.id, uid, url.trim(), platform);
 
-    // ── Mode 3: Production via n8n ─────────────────────────────────────
-    const n8nRes = await fetch(N8N_WEBHOOK_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url }),
-      signal: AbortSignal.timeout(120_000),
-    });
-
-    if (!n8nRes.ok) {
-      const errText = await n8nRes.text();
       return NextResponse.json(
-        { error: `n8n error: ${n8nRes.status}`, detail: errText },
-        { status: 502 }
+        { analysisId: docRef.id, status: "pending", mode: "async" },
+        { status: 202 }
       );
     }
 
-    const n8nData = await n8nRes.json();
-    const rawComments = n8nData.raw_comments || (
-      !n8nData.coordination_score ? n8nData.comments : null
-    );
+    // ── Mode 3: Demo (no URL — use sample data, synchronous) ───────────
+    const samplePath = path.join(process.cwd(), "data", "samples", "file (1).json");
+    const raw = JSON.parse(readFileSync(samplePath, "utf-8"));
+    const comments = raw[0].comments;
 
-    if (rawComments && Array.isArray(rawComments)) {
-      const result = await callPythonService(rawComments, url) as Record<string, unknown>;
-      
-      // AI Review sekarang manual - tidak otomatis
-      const needsAiCount = (result.comments as Array<Record<string, unknown>>)
-        ?.filter(c => c.needs_ai === true).length || 0;
-      
-      return NextResponse.json({ 
-        ...result, 
-        mode: "production",
-        needs_ai_review: needsAiCount > 0,
-        needs_ai_count: needsAiCount,
-      });
-    }
+    const result = await callPythonService(comments, "sample") as Record<string, unknown>;
 
-    return NextResponse.json({ ...n8nData, mode: "production" });
+    const needsAiCount = (result.comments as Array<Record<string, unknown>>)
+      ?.filter(c => c.needs_ai === true).length || 0;
+
+    return NextResponse.json({
+      ...result,
+      mode: "demo",
+      needs_ai_review: needsAiCount > 0,
+      needs_ai_count: needsAiCount,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     console.error("[/api/analyze]", message);
+
+    if (message.includes("Unauthorized") || message.includes("token")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

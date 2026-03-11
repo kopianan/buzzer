@@ -1,0 +1,268 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// ====================================\n// CONFIG: TikTok\n// ====================================\n\nconst POST_URL = 'https://www.tiktok.com/@.white.rosee/video/7583374514919099669?is_from_webapp=1&sender_device=pc&web_id=7577351948862113298';\n\n// 🔑 PASTE COOKIE KAMU DI SINI\n// Cara ambil: Login TikTok di browser → F12 → Application → Cookies → tiktok.com\nconst SESSION_ID = 'fc9f6a841f5c51c01c2394ec7c8e022c';      // sessionid\nconst CSRF_TOKEN = '0d6715fb131e6706a4883f4c59936c0d';      // tt_csrf_token atau csrf_session_id\nconst MS_TOKEN  = 'pdr4YgO_AvWVOYFWkr1xw5kHYpiNYZLNkuSq53vhw773jpIj80RBTWdYWzBA74Y7eWVK16qW4FTePdJO4ybv0gf4Ykb9qI33zO8n006ZN5757TGlRt9a9a1n028d808BohN1_rFhxBzTJqA=';           // msToken (penting untuk TikTok!)\n\nconst MAX_PAGES = 50; // safety limit, 1 page ≈ 20 comments\n\n// Extract video ID from URL\n// TikTok video ID ada di URL: /video/7586250968094756097\nconst match = POST_URL.match(/video\\/(\\d+)/);\nif (!match) throw new Error('Invalid TikTok URL. Expected format: https://www.tiktok.com/@user/video/VIDEO_ID');\nconst videoId = match[1];\n\nconst cookie = `sessionid=${SESSION_ID}; tt_csrf_token=${CSRF_TOKEN}; msToken=${MS_TOKEN};`;\n\n// Reset static data\nconst staticData = $getWorkflowStaticData('global');\nstaticData.allComments = [];\nstaticData.currentPage = 0;\nstaticData.commentCount = 0;\n\nconsole.log(`Video ID: ${videoId}`);\nconsole.log(`URL: ${POST_URL}`);\n\nreturn [{ json: {\n  videoId,\n  postUrl: POST_URL,\n  cookie,\n  csrfToken: CSRF_TOKEN,\n  msToken: MS_TOKEN,\n  maxPages: MAX_PAGES,\n  cursor: 0,\n  hasMore: true,\n}}];"
+      },
+      "id": "d39867c2-902c-4e75-9d46-41c0776d8c95",
+      "name": "Config (TikTok)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -944,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://www.tiktok.com/api/comment/list/?aid=1988&aweme_id={{ $json.videoId }}&count=20&cursor={{ $json.cursor }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json, text/plain, */*"
+            },
+            {
+              "name": "Accept-Language",
+              "value": "en-US,en;q=0.9"
+            },
+            {
+              "name": "Referer",
+              "value": "={{ $json.postUrl }}"
+            },
+            {
+              "name": "Cookie",
+              "value": "={{ $json.cookie }}"
+            },
+            {
+              "name": "Sec-Fetch-Site",
+              "value": "same-origin"
+            },
+            {
+              "name": "Sec-Fetch-Mode",
+              "value": "cors"
+            },
+            {
+              "name": "Sec-Fetch-Dest",
+              "value": "empty"
+            },
+            {
+              "name": "Sec-Ch-Ua-Platform",
+              "value": "\"Windows\""
+            }
+          ]
+        },
+        "options": {
+          "redirect": {
+            "redirect": {}
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "9b28d178-f3e0-482c-9a48-6fca7892177d",
+      "name": "Fetch Comments Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -704,
+        112
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// ====================================\n// Parse & store in staticData\n// ====================================\n\nconst raw = $input.first().json;\nconst staticData = $getWorkflowStaticData('global');\n\nif (!staticData.allComments) staticData.allComments = [];\nstaticData.currentPage = (staticData.currentPage || 0) + 1;\n\n// Get config from previous node\nlet config;\ntry {\n  config = $('Config (TikTok)').first().json;\n} catch(e) {\n  config = $('Loop Back').first().json;\n}\n\n// Error check\nif (raw.status_code && raw.status_code !== 0) {\n  console.log(`❌ TikTok error: status_code=${raw.status_code}, msg=${raw.status_msg || 'unknown'}`);\n  return [{ json: {\n    ...config,\n    shouldContinue: false,\n    error: raw.status_msg || `status_code: ${raw.status_code}`,\n  }}];\n}\n\nif (typeof raw === 'string' && raw.includes('<!DOCTYPE')) {\n  console.log('❌ TikTok returned HTML — session mungkin expired');\n  return [{ json: { ...config, shouldContinue: false, error: 'HTML returned, cookie expired' } }];\n}\n\n// Parse comments\nconst comments = (raw.comments || []).map(c => ({\n  id: c.cid || String(c.id || ''),\n  username: c.user?.unique_id || c.user?.nickname || 'unknown',\n  nickname: c.user?.nickname || '',\n  avatarUrl: c.user?.avatar_thumb?.url_list?.[0] || '',\n  isAuthor: c.is_author_digged || false,\n  text: c.text || '',\n  createdAt: c.create_time,\n  createdAtISO: c.create_time ? new Date(c.create_time * 1000).toISOString() : null,\n  likeCount: c.digg_count || 0,\n  replyCount: c.reply_comment_total || 0,\n  isPinned: c.is_pinned || false,\n}));\n\n// Accumulate in staticData\nstaticData.allComments.push(...comments);\nstaticData.commentCount = raw.total_comments || staticData.allComments.length;\n\n// Pagination\nconst hasMore = raw.has_more === 1 || raw.has_more === true;\nconst nextCursor = raw.cursor || 0;\nconst shouldContinue = hasMore && comments.length > 0 && staticData.currentPage < (config.maxPages || 50);\n\nconsole.log(`📄 Page ${staticData.currentPage}: +${comments.length} comments (total: ${staticData.allComments.length}/${staticData.commentCount}) | hasMore: ${hasMore} | cursor: ${nextCursor}`);\n\nreturn [{ json: {\n  videoId: config.videoId,\n  postUrl: config.postUrl,\n  cookie: config.cookie,\n  csrfToken: config.csrfToken,\n  msToken: config.msToken,\n  maxPages: config.maxPages,\n  cursor: nextCursor,\n  shouldContinue,\n}}];"
+      },
+      "id": "ddfb9595-90d9-4265-a2b5-aaa46f58fdf0",
+      "name": "Parse & Store",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -464,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "should_loop",
+              "leftValue": "={{ $json.shouldContinue }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e83545e8-dd9e-4657-835f-950390880ceb",
+      "name": "More Pages?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "id": "0c9ac5ac-2893-47c9-9f19-d02f4418e1d8",
+      "name": "Wait 3s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "tiktok-wait"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ====================================\n// Loop Back\n// ====================================\nconst input = $input.first().json;\nconsole.log(`🔄 Looping to next page... (cursor: ${input.cursor})`);\nreturn [{ json: input }];"
+      },
+      "id": "5b1efa46-ab99-4d2d-8b22-15d6267ddf40",
+      "name": "Loop Back",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ====================================\n// FINAL: Ambil SEMUA comments dari staticData\n// ====================================\n\nconst staticData = $getWorkflowStaticData('global');\nconst allComments = staticData.allComments || [];\nconst commentCount = staticData.commentCount || 0;\nconst pagesScraped = staticData.currentPage || 0;\n\nconst input = $input.first().json;\n\nconsole.log(`✅ FINAL: ${allComments.length} total comments from ${pagesScraped} pages`);\n\n// Clean up static data\nstaticData.allComments = [];\nstaticData.currentPage = 0;\nstaticData.commentCount = 0;\n\nif (allComments.length === 0) {\n  return [{ json: {\n    status: 'empty',\n    message: 'Tidak ada komentar yang berhasil di-scrape.',\n    videoId: input.videoId,\n    pagesScraped,\n    tip: 'Pastikan cookie (sessionid, msToken) valid. TikTok lebih strict dari IG.',\n  }}];\n}\n\nreturn [{ json: {\n  postUrl: input.postUrl,\n  videoId: input.videoId,\n  totalCommentCount: commentCount,\n  totalCollected: allComments.length,\n  pagesScraped,\n  scrapedAt: new Date().toISOString(),\n  comments: allComments,\n}}];"
+      },
+      "id": "ecd02fad-fef3-4301-8ea9-2ab40606fc86",
+      "name": "Finalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ====================================\n// Output: 1 row per comment\n// ====================================\n\nconst data = $input.first().json;\nconst comments = data.comments || [];\n\nif (comments.length === 0) {\n  return [{ json: {\n    status: 'empty',\n    message: `Tidak ada komentar dari ${data.postUrl}`,\n  }}];\n}\n\nconsole.log(`📊 Exporting ${comments.length} comments as rows`);\n\nreturn comments.map((c, i) => ({\n  json: {\n    no: i + 1,\n    post_url: data.postUrl,\n    video_id: data.videoId,\n    username: c.username,\n    nickname: c.nickname,\n    comment_text: c.text,\n    likes: c.likeCount,\n    reply_count: c.replyCount,\n    is_pinned: c.isPinned,\n    posted_at: c.createdAtISO,\n    scraped_at: data.scrapedAt,\n  }\n}));"
+      },
+      "id": "12b98123-9373-40df-8256-9bdd75b90548",
+      "name": "Output Comment Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        304,
+        288
+      ]
+    }
+  ],
+  "connections": {
+    "Config (TikTok)": {
+      "main": [
+        [
+          {
+            "node": "Fetch Comments Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Comments Page": {
+      "main": [
+        [
+          {
+            "node": "Parse & Store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Store": {
+      "main": [
+        [
+          {
+            "node": "More Pages?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "More Pages?": {
+      "main": [
+        [
+          {
+            "node": "Wait 3s",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Finalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 3s": {
+      "main": [
+        [
+          {
+            "node": "Loop Back",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Back": {
+      "main": [
+        [
+          {
+            "node": "Fetch Comments Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finalize": {
+      "main": [
+        [
+          {
+            "node": "Output Comment Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "d090d56c9406993bc91228ec728ff5c0ab3aca3e7c222fdca43a76906f989801"
+  }
+}

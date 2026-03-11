@@ -1,0 +1,332 @@
+{
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "5445148d-5c63-4e84-b152-6595c52d814d",
+      "name": "When clicking 'Test workflow'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1776,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://www.instagram.com/api/v1/media/{{ $json.mediaId }}/comments/?can_support_threading=true&permalink_enabled=false{{ $json.nextMinId ? '&min_id=' + $json.nextMinId : '' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"
+            },
+            {
+              "name": "Accept",
+              "value": "*/*"
+            },
+            {
+              "name": "Accept-Language",
+              "value": "en-US,en;q=0.9"
+            },
+            {
+              "name": "X-IG-App-ID",
+              "value": "936619743392459"
+            },
+            {
+              "name": "X-IG-WWW-Claim",
+              "value": "0"
+            },
+            {
+              "name": "X-Requested-With",
+              "value": "XMLHttpRequest"
+            },
+            {
+              "name": "X-CSRFToken",
+              "value": "={{ $json.csrftoken }}"
+            },
+            {
+              "name": "Cookie",
+              "value": "={{ $json.cookie }}"
+            },
+            {
+              "name": "Referer",
+              "value": "=https://www.instagram.com/p/{{ $json.shortcode }}/"
+            },
+            {
+              "name": "Sec-Fetch-Site",
+              "value": "same-origin"
+            },
+            {
+              "name": "Sec-Fetch-Mode",
+              "value": "cors"
+            },
+            {
+              "name": "Sec-Fetch-Dest",
+              "value": "empty"
+            }
+          ]
+        },
+        "options": {
+          "redirect": {
+            "redirect": {}
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "334a9232-e07e-401c-837d-b02160833c8d",
+      "name": "Fetch Comments Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1232,
+        416
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// ====================================\n// Parse page & STORE in staticData\n// + Include preview_child_comments (replies)\n// ====================================\n\nconst raw = $input.first().json;\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.allComments) staticData.allComments = [];\nstaticData.currentPage = (staticData.currentPage || 0) + 1;\n\n// Error check\nif (raw.message && raw.status === 'fail') {\n  console.log(`❌ Error: ${raw.message}`);\n  return [{ json: { shouldContinue: false } }];\n}\n\nif (typeof raw === 'string' && raw.includes('<!DOCTYPE')) {\n  console.log('❌ Instagram returned HTML — session expired.');\n  return [{ json: { shouldContinue: false } }];\n}\n\n// Helper: simplify a reply comment\nfunction simplifyReply(r) {\n  return {\n    id: String(r.pk || r.id || ''),\n    username: r.user?.username || 'unknown',\n    fullName: r.user?.full_name || '',\n    isVerified: r.user?.is_verified || false,\n    isAuthor: r.is_created_by_media_owner || false,\n    text: r.text || '',\n    createdAt: r.created_at,\n    createdAtISO: r.created_at ? new Date(r.created_at * 1000).toISOString() : null,\n    likeCount: r.comment_like_count || 0,\n  };\n}\n\n// Parse comments from this page\nconst pageComments = (raw.comments || []).map(c => {\n  // Simplify preview_child_comments (replies)\n  const replies = (c.preview_child_comments || []).map(simplifyReply);\n\n  return {\n    id: String(c.pk || c.id || ''),\n    username: c.user?.username || 'unknown',\n    fullName: c.user?.full_name || '',\n    isVerified: c.user?.is_verified || false,\n    isPrivate: c.user?.is_private || false,\n    text: c.text || '',\n    createdAt: c.created_at,\n    createdAtISO: c.created_at ? new Date(c.created_at * 1000).toISOString() : null,\n    likeCount: c.comment_like_count || 0,\n    childCommentCount: c.child_comment_count || 0,\n    // ✅ Include simplified replies\n    preview_child_comments: replies,\n  };\n});\n\nstaticData.allComments.push(...pageComments);\nstaticData.commentCount = raw.comment_count || staticData.allComments.length;\n\nconst hasMore = raw.has_more_comments || raw.has_more_headload_comments || false;\nconst nextMinId = raw.next_min_id || '';\nconst shouldContinue = hasMore && nextMinId && staticData.currentPage < 50 && pageComments.length > 0;\n\nconsole.log(`📄 Page ${staticData.currentPage}: +${pageComments.length} comments (total: ${staticData.allComments.length}/${staticData.commentCount})`);\n\nlet config;\ntry {\n  config = $('Config + Media ID1').first().json;\n} catch(e) {\n  config = $('Loop Back').first().json;\n}\n\nreturn [{ json: {\n  shortcode: config.shortcode,\n  mediaId: config.mediaId,\n  postUrl: config.postUrl,\n  cookie: config.cookie,\n  csrftoken: config.csrftoken,\n  nextMinId,\n  shouldContinue,\n}}];"
+      },
+      "id": "3f9f4253-3d1e-4bfe-be7a-d9f5dbbe2382",
+      "name": "Parse & Accumulate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -992,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "should_loop",
+              "leftValue": "={{ $json.shouldContinue }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e9884d78-c84c-4043-b953-5ddd41b2cbf2",
+      "name": "More Pages?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -816,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "id": "a4ee9af3-ae7b-4099-9eea-f87bf94cf669",
+      "name": "Wait 3s (Anti Rate-Limit)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -560,
+        272
+      ],
+      "webhookId": "ig-scraper-wait"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconsole.log(`🔄 Looping... (nextMinId: ${input.nextMinId})`);\nreturn [{ json: input }];"
+      },
+      "id": "c6640d91-5948-4c1d-bbba-b8f95c3d4458",
+      "name": "Loop Back",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ====================================\n// Output: 1 row per comment + replies\n// ====================================\n\nconst data = $input.first().json;\nconst comments = data.comments || [];\n\nif (comments.length === 0) {\n  return [{ json: {\n    status: 'empty',\n    message: `Tidak ada komentar dari ${data.postUrl}`,\n  }}];\n}\n\nconsole.log(`📊 Exporting ${comments.length} comments as rows`);\n\nreturn comments.map((c, i) => ({\n  json: {\n    no: i + 1,\n    \n    \n    username: c.username,\n    full_name: c.fullName,\n    is_verified: c.isVerified,\n    comment_text: c.text,\n    likes: c.likeCount,\n    is_private: c.isPrivate,\n    replies: c.preview_child_comments,\n    posted_at: c.createdAtISO,\n    \n  }\n}));"
+      },
+      "id": "f280b958-e023-4b75-9b35-8ffa5dea78be",
+      "name": "Output Comment Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -144,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ====================================\n// CONFIG + SHORTCODE TO MEDIA ID\n// ====================================\n\n\n// const POST_URL = 'https://www.instagram.com/p/DOq9TFQE1z2/';\nconst POST_URL = 'https://www.instagram.com/p/DOOAI7dksMY/';\n\nconst SESSIONID = 'randomid';\nconst CSRFTOKEN = 'random';\nconst DS_USER_ID = '37138889879';\n\nconst MAX_PAGES = 1000;\n\nconst match = POST_URL.match(/\\/(?:p|reel|tv)\\/([A-Za-z0-9_-]+)/);\nif (!match) throw new Error('Invalid Instagram URL');\nconst shortcode = match[1];\n\nfunction shortcodeToMediaId(shortcode) {\n  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';\n  let mediaId = BigInt(0);\n  for (const char of shortcode) {\n    mediaId = mediaId * BigInt(64) + BigInt(alphabet.indexOf(char));\n  }\n  return mediaId.toString();\n}\n\nconst mediaId = shortcodeToMediaId(shortcode);\nconst cookie = `sessionid=${SESSIONID}; csrftoken=${CSRFTOKEN}; ds_user_id=${DS_USER_ID}; ig_nrcb=1;`;\n\nconst staticData = $getWorkflowStaticData('global');\nstaticData.allComments = [];\nstaticData.currentPage = 0;\nstaticData.commentCount = 0;\n\nconsole.log(`Shortcode: ${shortcode} → Media ID: ${mediaId}`);\n\nreturn [{ json: {\n  shortcode,\n  mediaId,\n  postUrl: POST_URL,\n  cookie,\n  csrftoken: CSRFTOKEN,\n  maxPages: MAX_PAGES,\n  nextMinId: '',\n  hasMore: true,\n}}];"
+      },
+      "id": "12c2903b-7d31-42c6-a558-9d56089d7842",
+      "name": "Config + Media ID1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1504,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ====================================\n// ✅ FINAL: Ambil SEMUA comments dari staticData\n// ====================================\n\nconst staticData = $getWorkflowStaticData('global');\nconst allComments = staticData.allComments || [];\nconst commentCount = staticData.commentCount || 0;\nconst pagesScraped = staticData.currentPage || 0;\n\nconst input = $input.first().json;\n\nconsole.log(`✅ FINAL: ${allComments.length} total comments from ${pagesScraped} pages`);\n\nstaticData.allComments = [];\nstaticData.currentPage = 0;\nstaticData.commentCount = 0;\n\nif (allComments.length === 0) {\n  return [{ json: {\n    status: 'empty',\n    message: 'Tidak ada komentar yang berhasil di-scrape.',\n    pagesScraped,\n  }}];\n}\n\nreturn [{ json: {\n  postUrl: input.postUrl || '',\n  shortcode: input.shortcode || '',\n  mediaId: input.mediaId || '',\n  totalCommentCount: commentCount,\n  totalCollected: allComments.length,\n  pagesScraped,\n  scrapedAt: new Date().toISOString(),\n  comments: allComments,\n}}];"
+      },
+      "id": "e7ea8eec-47f5-4e94-8423-925e7630d7b3",
+      "name": "Finalize1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -352,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Gabung semua items jadi 1 item\nconst allComments = $input.all().map(item => item.json);\n\nreturn [{ json: {\n  total: allComments.length,\n  comments: allComments,\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        416
+      ],
+      "id": "c8117973-a877-4ead-9d85-e59cf5534f07",
+      "name": "Code in JavaScript"
+    }
+  ],
+  "connections": {
+    "When clicking 'Test workflow'": {
+      "main": [
+        [
+          {
+            "node": "Config + Media ID1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Comments Page": {
+      "main": [
+        [
+          {
+            "node": "Parse & Accumulate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Accumulate": {
+      "main": [
+        [
+          {
+            "node": "More Pages?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "More Pages?": {
+      "main": [
+        [
+          {
+            "node": "Wait 3s (Anti Rate-Limit)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Finalize1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 3s (Anti Rate-Limit)": {
+      "main": [
+        [
+          {
+            "node": "Loop Back",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Back": {
+      "main": [
+        [
+          {
+            "node": "Fetch Comments Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Output Comment Rows": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config + Media ID1": {
+      "main": [
+        [
+          {
+            "node": "Fetch Comments Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finalize1": {
+      "main": [
+        [
+          {
+            "node": "Output Comment Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "d090d56c9406993bc91228ec728ff5c0ab3aca3e7c222fdca43a76906f989801"
+  }
+}

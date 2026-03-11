@@ -7,15 +7,17 @@ import json
 import logging
 import os
 import time
-from typing import Any
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 
-from analyzer import analyze
-from ai_reviewer import review_ambiguous_comments
-from config import config
+from config.settings import config
+from core.analyzer import analyze
+from core.ai_reviewer import review_ambiguous_comments
+from models.schemas import AnalyzeRequest, HealthResponse
+from app.routers.job import router as job_router
+from utils.firebase import init_firebase
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 
@@ -26,9 +28,30 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+# ── Lifespan ───────────────────────────────────────────────────────────────────
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan events."""
+    logger.info("Analysis Service starting up...")
+    logger.info(f"AI Provider: {config.AI_PROVIDER}, Enabled: {config.ai_enabled()}")
+    # Initialize Firebase Admin SDK for Firestore job updates
+    try:
+        init_firebase()
+    except Exception as e:
+        logger.warning(f"Firebase init failed (job updates disabled): {e}")
+    yield
+    logger.info("Analysis Service shutting down...")
+
+
 # ── App ───────────────────────────────────────────────────────────────────────
 
-app = FastAPI(title="Buzzer Detector Analysis Service", version="2.0.0")
+app = FastAPI(
+    title="Buzzer Detector Analysis Service",
+    version="2.0.0",
+    lifespan=lifespan,
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -36,6 +59,9 @@ app.add_middleware(
     allow_methods=["POST", "GET"],
     allow_headers=["*"],
 )
+
+# Register routers
+app.include_router(job_router)
 
 
 @app.middleware("http")
@@ -47,17 +73,9 @@ async def log_requests(request: Request, call_next):
     return response
 
 
-# ── Request / Response Models ──────────────────────────────────────────────────
-
-class AnalyzeRequest(BaseModel):
-    comments: list[dict[str, Any]]
-    ai_threshold: int = 20
-    post_url: str = "sample"
-
-
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 
-@app.get("/health")
+@app.get("/health", response_model=HealthResponse)
 def health():
     return {
         "status": "ok",
@@ -80,9 +98,12 @@ def analyze_comments(req: AnalyzeRequest):
 
     result = analyze(req.comments, ai_threshold=req.ai_threshold, post_url=req.post_url)
 
-    # Hybrid AI: review komentar ambiguous jika AI aktif
+    # Hybrid AI: review komentar ambiguous jika AI aktif dan auto-review di-enable
+    # NOTE: Untuk manual trigger via n8n, AI review dilakukan di layer n8n/frontend
     if config.ai_enabled() and result.get("stats", {}).get("needs_ai", 0) > 0:
-        result["comments"] = review_ambiguous_comments(result["comments"])
+        # Cek header untuk auto-review (default: false untuk manual trigger)
+        # result["comments"] = review_ambiguous_comments(result["comments"])
+        pass  # AI review sekarang manual via /ai-review endpoint atau n8n
 
     elapsed = round((time.time() - start) * 1000)
     logger.info(
@@ -99,8 +120,8 @@ def analyze_comments(req: AnalyzeRequest):
 
 @app.post("/analyze/sample")
 def analyze_sample():
-    """Test endpoint: load dari file (1).json di root project"""
-    sample_path = os.path.join(os.path.dirname(__file__), "..", "file (1).json")
+    """Test endpoint: load dari file sample di data folder"""
+    sample_path = os.path.join(os.path.dirname(__file__), "..", "data", "samples", "file (1).json")
     try:
         with open(sample_path, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -111,6 +132,8 @@ def analyze_sample():
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Sample file tidak ditemukan")
 
+
+# ── Main ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     import uvicorn

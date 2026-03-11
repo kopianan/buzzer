@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { AnalysisResult, FilterType, ThreatConfig } from "@/lib/types";
 import { SummaryGrid } from "./SummaryGrid";
 import { CoordinationMeter } from "./CoordinationMeter";
@@ -58,6 +59,8 @@ interface Props {
   onReset: () => void;
   onTriggerAIReview: () => void;
   isAiReviewing: boolean;
+  credits?: number | null;
+  onRequireCredit?: () => void;
 }
 
 const TABS = [
@@ -68,7 +71,7 @@ const TABS = [
 
 export function ResultsView({
   result, meterWidth, filter, setFilter, activeTab, setActiveTab, onReset,
-  onTriggerAIReview, isAiReviewing,
+  onTriggerAIReview, isAiReviewing, credits, onRequireCredit,
 }: Props) {
   const threatConfig = getThreatConfig(result.coordination_score, result);
   
@@ -76,6 +79,15 @@ export function ResultsView({
   const aiReviewedCount = result.comments.filter(c => c.reasoning).length;
   const pendingAiCount = result.comments.filter(c => c.needs_ai && !c.reasoning).length;
   const hasAiReview = aiReviewedCount > 0;
+
+  const handleAIReviewClick = () => {
+    // Check if user has credits
+    if (credits !== undefined && credits !== null && credits < 1) {
+      onRequireCredit?.();
+      return;
+    }
+    onTriggerAIReview();
+  };
 
   return (
     <section className="pb-16">
@@ -92,9 +104,22 @@ export function ResultsView({
             <span>🤖</span> 
             {pendingAiCount} komentar memerlukan review AI untuk validasi akhir dan penentuan sentimen
           </div>
+          
+          {/* Credit Info */}
+          {credits !== undefined && credits !== null && (
+            <div className="flex items-center gap-2 text-[12px] text-[#8888a0] mb-3">
+              <span>🪙</span>
+              {credits > 0 ? (
+                <span>Membutuhkan 1 kredit. Sisa kredit: <strong className="text-[#ff3d5a]">{credits}</strong></span>
+              ) : (
+                <span className="text-[#ff3d5a]">Kredit habis. Beli kredit untuk melanjutkan.</span>
+              )}
+            </div>
+          )}
+
           <button
-            onClick={onTriggerAIReview}
-            disabled={isAiReviewing}
+            onClick={handleAIReviewClick}
+            disabled={isAiReviewing || (credits !== undefined && credits !== null && credits < 1)}
             className="w-full sm:w-auto px-4 py-2 bg-gradient-to-r from-[#6366f1] to-[#8b5cf6] hover:from-[#5558e0] hover:to-[#7c4fe8] disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-[13px] font-medium text-white transition-all flex items-center justify-center gap-2"
           >
             {isAiReviewing ? (
@@ -105,7 +130,7 @@ export function ResultsView({
             ) : (
               <>
                 <span>✨</span>
-                Analyze with AI
+                Analyze with AI {credits !== undefined && credits !== null && credits < 1 && "(Kredit Habis)"}
               </>
             )}
           </button>
