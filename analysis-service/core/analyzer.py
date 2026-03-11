@@ -23,7 +23,7 @@ from config.keywords import (
 )
 
 # ── Setup Sastrawi ────────────────────────────────────────────────────────────
-
+#push
 _stemmer = StemmerFactory().create_stemmer()
 _stop_word_remover = StopWordRemoverFactory().create_stop_word_remover()
 
