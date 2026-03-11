@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   # ═══════════════════════════════════════════════════════════════════════════
-  # PYTHON ANALYSIS SERVICE (Port 8000)
+  # PYTHON ANALYSIS SERVICE (internal only, tidak expose ke publik)
   # ═══════════════════════════════════════════════════════════════════════════
   analysis-service:
     build:
@@ -10,9 +10,6 @@ services:
       dockerfile: Dockerfile
     container_name: buzzer-analyzer
     restart: unless-stopped
-    ports:
-      # Bisa di-comment kalau tidak perlu akses publik ke Python
-      - "8000:8000"
     environment:
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
@@ -32,7 +29,7 @@ services:
       start_period: 15s
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # NEXT.JS WEB APP (Port 3000)
+  # NEXT.JS WEB APP — diakses via Traefik (buzzer.technokh.com)
   # ═══════════════════════════════════════════════════════════════════════════
   web-app:
     build:
@@ -47,22 +44,27 @@ services:
         - NEXT_PUBLIC_FIREBASE_APP_ID=${NEXT_PUBLIC_FIREBASE_APP_ID}
     container_name: buzzer-web
     restart: unless-stopped
-    ports:
-      - "3000:3000"
     environment:
-      # URL ke Python service (gunakan nama service sebagai hostname)
       - PYTHON_SERVICE_URL=http://analysis-service:8000
-      # Internal shared secret
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
-      # Firebase Admin SDK (server-side)
       - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
       - FIREBASE_CLIENT_EMAIL=${FIREBASE_CLIENT_EMAIL}
       - FIREBASE_PRIVATE_KEY=${FIREBASE_PRIVATE_KEY}
-      # n8n Webhook URLs
       - N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL:-}
       - N8N_AI_WEBHOOK_URL=${N8N_AI_WEBHOOK_URL:-}
+      - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
     networks:
       - buzzer-network
+      - proxy_public
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy_public"
+      - "traefik.http.routers.buzzer.rule=Host(`buzzer.technokh.com`)"
+      - "traefik.http.routers.buzzer.entrypoints=websecure"
+      - "traefik.http.routers.buzzer.tls=true"
+      - "traefik.http.routers.buzzer.tls.certresolver=myresolver"
+      - "traefik.http.services.buzzer.loadbalancer.server.port=3000"
     depends_on:
       analysis-service:
         condition: service_healthy
@@ -70,3 +72,5 @@ services:
 networks:
   buzzer-network:
     driver: bridge
+  proxy_public:
+    external: true
